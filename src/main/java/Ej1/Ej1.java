@@ -5,10 +5,15 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Scanner;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class Ej1 {
     public static void main(String[] args) {
-        String url = new Scanner(System.in).nextLine();
+//        String url = new Scanner(System.in).nextLine();
+        String url= "https://dibujosycolores.com/letras/letra-a/letra-a-8.jpg";
         URL u = null;
         HttpURLConnection con = null;
         try {
@@ -16,11 +21,63 @@ public class Ej1 {
             con = (HttpURLConnection) u.openConnection();
             con.setRequestMethod("HEAD");
             long tamaño = con.getContentLengthLong();
-            Descargador d1, d2, d3;
-            d1 = new Descargador(new URL(url), 0, tamaño/3-1);
-            d2 = new Descargador(new URL(url), tamaño/3, tamaño/3*2-1);
-            d3 = new Descargador(new URL(url), tamaño/3*2, tamaño-1);
+            long tamDiv=tamaño/3, max;
+            final CyclicBarrier starter = new CyclicBarrier(4);
+            ExecutorService pool = Executors.newFixedThreadPool(3);
+            for(int i=0;i<3;i++){
+                max=tamDiv*(i+1)-1;
+                if(i==2) max=tamaño-1;
+//                Descargador d = new Descargador(new URL(url), tamDiv*i, max);
+                URL finalU = u;
+                int finalI = i;
+                long finalMax = max;
+                pool.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            HttpURLConnection con = null;
+                            RandomAccessFile raf = null;
+                            DataInputStream dis = null;
+                            byte [] buff = new byte[128];
+                            int leidos;
+                            try {
+                                con = (HttpURLConnection) new URL(url).openConnection();
+                                con.setRequestProperty("Range", "bytes="+tamDiv* finalI +"-"+finalMax);
+                                dis=new DataInputStream(con.getInputStream());
+                                String [] s = finalU.getFile().split("/");
+                                raf = new RandomAccessFile(s[s.length-1], "rw");
+                                raf.seek(tamDiv*finalI);
+                                while((leidos=dis.read(buff))!=-1){
+                                    raf.write(buff,0,leidos);
+                                }
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                            finally {
+                                try {
+                                    assert raf != null;
+                                    raf.close();
+                                    dis.close();
+                                } catch (IOException e) {
+                                    e.printStackTrace();
+                                }
+                            }
+                            starter.await();
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        } catch (BrokenBarrierException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                });
+            }
+            starter.await();
+            pool.shutdown();
         } catch (IOException e) {
+            e.printStackTrace();
+        } catch (BrokenBarrierException e) {
+            e.printStackTrace();
+        } catch (InterruptedException e) {
             e.printStackTrace();
         }
     }
